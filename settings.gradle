@@ -1,0 +1,4 @@
+rootProject.name = 'pyslice-kt'
+
+include "plugin"
+include "plugin-demo"

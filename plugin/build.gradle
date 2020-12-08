@@ -1,0 +1,33 @@
+import java.nio.file.Paths
+
+plugins {
+    id "java"
+    id "org.jetbrains.kotlin.jvm"
+}
+
+repositories {
+    mavenCentral()
+    jcenter()
+    maven { url 'https://oss.jfrog.org/artifactory/oss-snapshot-local/' }
+}
+
+dependencies {
+    compileOnly "org.jetbrains.kotlin:kotlin-compiler-embeddable:$KOTLIN"
+    compileOnly "io.arrow-kt:compiler-plugin:$ARROW_META"
+}
+
+compileKotlin {
+    kotlinOptions {
+        jvmTarget = 1.8
+    }
+}
+
+jar {
+    from (
+       zipTree(sourceSets.main.compileClasspath.find {
+           it.absolutePath.contains(Paths.get("arrow-kt","compiler-plugin").toString())
+       })
+    ) {
+        exclude 'META-INF/services/org.jetbrains.kotlin.compiler.plugin.ComponentRegistrar'
+    }
+}

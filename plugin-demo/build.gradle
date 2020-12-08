@@ -1,0 +1,22 @@
+plugins {
+    id "org.jetbrains.kotlin.jvm"
+}
+
+dependencies {
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8"
+    implementation project(":plugin")
+    compileOnly "io.arrow-kt:arrow-annotations:$ARROW_ANNOTATIONS"
+}
+
+compileKotlin {
+    kotlinOptions {
+        jvmTarget = 1.8
+        freeCompilerArgs = [
+                "-Xplugin=${project.rootDir}/plugin/build/libs/plugin-${PLUGIN_VERSION}.jar"
+        ]
+    }
+}
+
+tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile) {
+    compileTask -> compileTask.dependsOn ":plugin:assemble"
+}

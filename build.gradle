@@ -1,0 +1,22 @@
+plugins {
+    id 'org.jetbrains.kotlin.jvm' version "$KOTLIN"
+}
+
+
+allprojects {
+
+    group 'dev.junron.pyslice'
+    version "$PLUGIN_VERSION"
+
+    repositories {
+        jcenter()
+        mavenCentral()
+    }
+}
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation "org.jetbrains.kotlin:kotlin-stdlib"
+}
