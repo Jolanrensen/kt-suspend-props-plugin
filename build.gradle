@@ -5,7 +5,7 @@ plugins {
 
 allprojects {
 
-    group 'dev.junron.pyslice'
+    group 'nl.jolanrensen.suspendPropertyPlugin'
     version "$PLUGIN_VERSION"
 
     repositories {

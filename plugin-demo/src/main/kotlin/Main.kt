@@ -1,25 +1,19 @@
-import dev.junron.pyslice.NegativeIndex
-import dev.junron.pyslice.PythonSlice
-import dev.junron.pyslice.get
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
-@NegativeIndex
-@PythonSlice
-fun main() {
-    val string = "Hello, world!"
-    // Extension operator function without compiler plugin
-    println(string[null, null, -1])
-    println(string[null, 7] + "Kotlin!")
-    // With compiler plugin
-    println(string[::-1])
-    println(string[:7]+"Kotlin!")
-    // Negative indexes
-    println(string[:7]+"Kotlin" + string[-1])
-    // More examples
-    // Characters with even index
-    println(string[::2])
-    // Identity
-    println(string[::])
-    // Replace
-    val index = 5
-    println(string[:index]+"!"+string[index+1:])
+
+suspend fun main() {
+    testProp++
 }
+
+
+private suspend var testProp: Int
+    get() {
+        // say what
+        return withContext(Dispatchers.IO) {
+            delay(2000)
+            3
+        }
+    }
+    set(value) = println(value)

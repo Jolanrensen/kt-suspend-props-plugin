@@ -12,8 +12,12 @@ repositories {
 }
 
 dependencies {
-    compileOnly "org.jetbrains.kotlin:kotlin-compiler-embeddable:$KOTLIN"
-    compileOnly "io.arrow-kt:compiler-plugin:$ARROW_META"
+    implementation "org.jetbrains.kotlin:kotlin-compiler-embeddable:$KOTLIN"
+    implementation "io.arrow-kt:compiler-plugin:$ARROW_META"
+    implementation "io.arrow-kt:meta-test:$ARROW_META"
+
+    implementation 'com.github.tschuchortdev:kotlin-compile-testing:1.3.1'
+    testImplementation 'junit:junit:4.12'
 }
 
 compileKotlin {

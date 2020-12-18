@@ -1,4 +1,4 @@
-rootProject.name = 'pyslice-kt'
+rootProject.name = 'suspendPropertyPlugin'
 
 include "plugin"
 include "plugin-demo"
