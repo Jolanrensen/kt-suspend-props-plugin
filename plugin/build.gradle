@@ -3,18 +3,26 @@ import java.nio.file.Paths
 plugins {
     id "java"
     id "org.jetbrains.kotlin.jvm"
+//    id "org.jetbrains.intellij" version "$INTELLIJ_GRADLE_PLUGIN_VERSION"
 }
+
+//apply plugin: 'org.jetbrains.intellij'
+
 
 repositories {
     mavenCentral()
     jcenter()
     maven { url 'https://oss.jfrog.org/artifactory/oss-snapshot-local/' }
+    maven { url "https://www.jetbrains.com/intellij-repository/snapshots" }
 }
 
 dependencies {
     implementation "org.jetbrains.kotlin:kotlin-compiler-embeddable:$KOTLIN"
     implementation "io.arrow-kt:compiler-plugin:$ARROW_META"
     implementation "io.arrow-kt:meta-test:$ARROW_META"
+
+    implementation "io.arrow-kt:idea-plugin:$ARROW_META"
+    implementation "com.intellij:openapi:7.0.3"
 
     implementation 'com.github.tschuchortdev:kotlin-compile-testing:1.3.1'
     testImplementation 'junit:junit:4.12'

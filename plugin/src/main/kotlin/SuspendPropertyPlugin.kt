@@ -2,7 +2,6 @@ package nl.jolanrensen.suspendPropertyPlugin
 
 import arrow.meta.CliPlugin
 import arrow.meta.Meta
-import arrow.meta.Plugin
 import arrow.meta.invoke
 import arrow.meta.phases.CompilerContext
 import arrow.meta.phases.codegen.ir.valueArguments
@@ -14,24 +13,37 @@ import org.jetbrains.kotlin.descriptors.impl.PropertySetterDescriptorImpl
 import org.jetbrains.kotlin.ir.builders.irCall
 import org.jetbrains.kotlin.ir.expressions.IrCall
 import org.jetbrains.kotlin.ir.expressions.IrExpression
-import org.jetbrains.kotlin.ir.util.IdSignature
 import org.jetbrains.kotlin.ir.util.dump
 import org.jetbrains.kotlin.ir.visitors.IrElementTransformerVoid
 import org.jetbrains.kotlin.ir.visitors.transformChildrenVoid
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.psi.*
-import org.jetbrains.kotlin.psi.psiUtil.*
 import org.jetbrains.kotlin.utils.addToStdlib.safeAs
 import kotlin.contracts.ExperimentalContracts
 import kotlin.reflect.KClass
 
 const val debug = true
 
-class SuspendPropertyPlugin : Meta {
-    @ExperimentalContracts
-    override fun intercept(ctx: CompilerContext): List<Plugin<CompilerContext>> = listOf(suspendProperty)
-}
+class SuspendPropertyPlugin : Meta /*, MetaIde todo breaks all*/ {
 
+    @ExperimentalContracts
+    override fun intercept(ctx: CompilerContext): List<CliPlugin> = listOf(
+        // higherKindedTypes2,
+        // typeClasses,
+        // comprehensions,
+        // lenses,
+//        typeProofs,
+//        optics,
+        suspendProperty,
+    )
+
+//    @ExperimentalContracts
+//    override fun intercept(ctx: IdeContext): List<IdePlugin> = listOf(
+//        initialIdeSetUp,
+//        quotes,
+//        typeProofsIde
+//    ) + suspendPropertyIde
+}
 
 @OptIn(ExperimentalStdlibApi::class)
 val Meta.suspendProperty: CliPlugin
@@ -39,7 +51,20 @@ val Meta.suspendProperty: CliPlugin
         meta(
             enableIr(),
 
-            property(this, { modifierList?.text?.contains("suspend") ?: false }) { prop: KtProperty ->
+            // TODO, throws: java.lang.IllegalStateException: Unable to collect additional sources in reasonable number of iterations
+//            additionalSources { collection, _, _ ->
+//                 (Transform.newSources<KtClass>(
+//                    "annotation class _SuspendProp".file("_SuspendProp")
+//                ) as Transform.NewSource<KtClass>)
+//                    .newSource()
+//                    .map { it.first }
+//            },
+
+            property(this, {
+                (modifierList?.text?.contains("suspend") ?: false)
+                        || (getter?.modifierList?.text?.contains("suspend") ?: false)
+                        || (setter?.modifierList?.text?.contains("suspend") ?: false)
+            }) { prop: KtProperty ->
 
                 if (delegate.toString() != "") throw IllegalArgumentException("Delegate suspend properties are not supported yet.")
                 if (initializer.toString() != "") throw IllegalArgumentException("Suspend property initializers are not supported yet.")
@@ -51,14 +76,28 @@ val Meta.suspendProperty: CliPlugin
                     replacing = prop,
                     newDeclarations = buildList {
 
-                        this += """
-                            |${if (debug) META_DEBUG_COMMENT else ""}      
-                            |annotation class _SuspendProp
-                        """.trimMargin().trim().`class`
+                        val propertyIsSuspend = prop.modifierList?.text?.contains("suspend") ?: false
+
+                        val hasGetter = getter.value != null
+                        val hasSetter = setter.value != null
+
+                        val getterIsSuspend =
+                            propertyIsSuspend || prop.getter?.modifierList?.text?.contains("suspend") ?: false
+                        val setterIsSuspend =
+                            propertyIsSuspend || prop.setter?.modifierList?.text?.contains("suspend") ?: false
+
+                        println("hasGetter: $hasGetter, hasSetter: $hasSetter, getterIsSuspend: $getterIsSuspend, setterIsSuspend: $setterIsSuspend")
+
+//                        TODO, this becomes an error when there are multiple suspend properties. Must be added only once to a file
+//                        this += """
+//                            |${if (debug) META_DEBUG_COMMENT else ""}
+//                            |annotation class _SuspendProp
+//                        """.trimMargin().trim().`class`
+
 
                         this += """
-                            |${if (debug) META_DEBUG_COMMENT else ""}      
-                            |@_SuspendProp
+                            |${if (debug) META_DEBUG_COMMENT else ""}
+                            |@SuspendProp
                         """.trimMargin().trim().annotationEntry
 
                         // add original property with exceptions so that ::references still work
@@ -66,53 +105,69 @@ val Meta.suspendProperty: CliPlugin
                             """
                                 |${if (debug) META_DEBUG_COMMENT else ""}
                                 |$modality $visibility $valOrVar $name $returnType $initializer
-                                |   ${if (getter.toString() == "" || value.hasInitializer()) "" else "get() = throw Exception()"}
-                                |   ${if (setter.toString() == "" || value.hasInitializer()) "" else "set${setter.`(params)`} = throw Exception()"}
+                                |   ${
+                                if (getter.toString() == "" || value.hasInitializer())
+                                    ""
+                                else
+                                    "get() = throw IllegalStateException(\"This call is replaced with _suspendProp_get${prop.name!!.capitalize()}() at compile time.\")"
+                            }
+                                |   ${
+                                if (setter.toString() == "" || value.hasInitializer())
+                                    ""
+                                else
+                                    "set${setter.`(params)`} = throw IllegalStateException(\"This call is replaced with _suspendProp_set${prop.name!!.capitalize()}() at compile time.\")"
+                            }
                             """.trimMargin().trim().property
                         }
 
-                        this += getter.run {
-                            val bodyWithoutCommentsAndWhiteSpace = bodyExpression.toString()
-                                .withoutComments()
-                                .withoutWhitespace()
+                        if (hasGetter)
+                            this += getter.run {
+                                val bodyWithoutCommentsAndWhiteSpace = bodyExpression.toString()
+                                    .withoutComments()
+                                    .withoutWhitespace()
 
-                            """
+                                val sus = if (getterIsSuspend) "suspend " else ""
+
+                                """
                                 |${if (debug) META_DEBUG_COMMENT else ""}
-                                |$mod${vis}suspend fun _get${prop.name!!.capitalize()}()$returnType ${
-                                if (bodyWithoutCommentsAndWhiteSpace.first() == '{') "$bodyExpression" else "= $bodyExpression"
-                            }
+                                |$mod$vis${sus}fun _suspendProp_get${prop.name!!.capitalize()}()$returnType ${
+                                    if (bodyWithoutCommentsAndWhiteSpace.first() == '{') "$bodyExpression" else "= $bodyExpression"
+                                }
                             """.trimMargin().trim().function
-                        }
+                            }
 
-                        if (value.isVar) this += setter.run {
-                            val bodyWithoutCommentsAndWhiteSpace = bodyExpression.toString()
-                                .withoutComments()
-                                .withoutWhitespace()
+                        if (hasSetter)
+                            this += setter.run {
+                                val bodyWithoutCommentsAndWhiteSpace = bodyExpression.toString()
+                                    .withoutComments()
+                                    .withoutWhitespace()
 
-                            """
+                                val sus = if (setterIsSuspend) "suspend " else ""
+
+                                """
                                 |${if (debug) META_DEBUG_COMMENT else ""}
-                                |$mod${vis}suspend fun _set${prop.name!!.capitalize()}${
-                                ScopedList(
-                                    prefix = "(",
-                                    value = value?.valueParameters ?: emptyList(),
-                                    postfix = ")",
-                                    forceRenderSurroundings = true,
-                                    transform = { "${it.name}$returnType" },
-                                )
-                            } ${
-                                if (bodyWithoutCommentsAndWhiteSpace.first() == '{') "$bodyExpression" else "= $bodyExpression"
-                            }
+                                |$mod$vis${sus}fun _suspendProp_set${prop.name!!.capitalize()}${
+                                    ScopedList(
+                                        prefix = "(",
+                                        value = value?.valueParameters ?: emptyList(),
+                                        postfix = ")",
+                                        forceRenderSurroundings = true,
+                                        transform = { "${it.name}$returnType" },
+                                    )
+                                } ${
+                                    if (bodyWithoutCommentsAndWhiteSpace.first() == '{') "$bodyExpression" else "= $bodyExpression"
+                                }
                             """.trimMargin().trim().function
-                        }
+                            }
 
                     }
                 )
             },
 
-//            irFile { file ->
-//                println("old file: " + file.dump())
-//                file
-//            },
+            irFile { file ->
+                println("old file: " + file.dump())
+                file
+            },
 
             IrGeneration { _, moduleFragment, pluginContext ->
                 moduleFragment.transformChildrenVoid(object : IrElementTransformerVoid() {
@@ -128,7 +183,7 @@ val Meta.suspendProperty: CliPlugin
                                 if ((expression.symbol.descriptor as? PropertyGetterDescriptorImpl)
                                         ?.correspondingProperty
                                         ?.toString()
-                                        ?.startsWith("@_SuspendProp") == true
+                                        ?.startsWith("@SuspendProp") == true
                                 ) {
 //                                    val propName = (
 //                                            (expression.symbol.signature as IdSignature.AccessorSignature)
@@ -144,7 +199,7 @@ val Meta.suspendProperty: CliPlugin
                                     DeclarationIrBuilder(pluginContext, expression.symbol)
                                         .irCall(
                                             pluginContext
-                                                .referenceFunctions(FqName("_get${propName.capitalize()}"))
+                                                .referenceFunctions(FqName("_suspendProp_get${propName.capitalize()}"))
                                                 .first()
                                         )
                                 } else expression
@@ -154,7 +209,7 @@ val Meta.suspendProperty: CliPlugin
                                 if ((expression.symbol.descriptor as? PropertySetterDescriptorImpl)
                                         ?.correspondingProperty
                                         ?.toString()
-                                        ?.startsWith("@_SuspendProp") == true
+                                        ?.startsWith("@SuspendProp") == true
                                 ) {
                                     val propName = (expression.symbol.descriptor as PropertySetterDescriptorImpl)
                                         .correspondingProperty
@@ -165,7 +220,7 @@ val Meta.suspendProperty: CliPlugin
                                     DeclarationIrBuilder(pluginContext, expression.symbol)
                                         .irCall(
                                             pluginContext
-                                                .referenceFunctions(FqName("_set${propName.capitalize()}"))
+                                                .referenceFunctions(FqName("_suspendProp_set${propName.capitalize()}"))
                                                 .first()
                                         ).apply {
                                             putValueArgument(0, expression.valueArguments.first().second)
@@ -181,12 +236,12 @@ val Meta.suspendProperty: CliPlugin
                 })
             },
 
-//            irFile { file ->
-//                println("new File: " + file.dump())
-//                file
-//            },
+            irFile { file ->
+                println("new File: " + file.dump())
+                file
+            },
 
-        )
+            )
     }
 
 

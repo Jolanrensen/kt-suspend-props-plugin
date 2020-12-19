@@ -1,19 +1,18 @@
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
 
+// TODO remove when this is no longer needed in the future
+annotation class SuspendProp
 
 suspend fun main() {
     testProp++
 }
 
-
 private suspend var testProp: Int
     get() {
-        // say what
-        return withContext(Dispatchers.IO) {
-            delay(2000)
-            3
-        }
+        delay(2000)
+        return 3
     }
-    set(value) = println(value)
+    set(value) {
+        delay(2000)
+        println(value)
+    }
