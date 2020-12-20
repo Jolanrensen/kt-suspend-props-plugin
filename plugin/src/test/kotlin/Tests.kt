@@ -5,7 +5,7 @@ import nl.jolanrensen.suspendPropertyPlugin.SuspendPropertyPlugin
 import org.intellij.lang.annotations.Language
 import org.junit.Test
 
-class Tests {
+class GetterSetterTests {
 
     @Test
     fun `main test`() {
@@ -55,11 +55,7 @@ class Tests {
         """.trimIndent()
 
         assertThis(CompilerTest(
-            config = {
-                listOf(
-                    addMetaPlugins(SuspendPropertyPlugin())
-                )
-            },
+            config = { listOf(addMetaPlugins(SuspendPropertyPlugin())) },
             code = { source.source },
             assert = { quoteOutputMatches(expectedOutput.source) }
         ))

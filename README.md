@@ -57,11 +57,11 @@ private var testProp: Int
 
 ## Future improvements
 1. Write Intellij plugin
-2. Delegates (suspend operator fun get/setValue)
+2. Suspend Delegates (suspend operator fun get/setValue)
 3. Interface support
 4. Robust naming of under-the-hood-created functions
 5. Making sure creating an annotation class SuspendProp by the user is no longer needed
-
+3. Local Suspend Delegates (might require variable references to work)
 
 ## How does it work?
 The plugin essentially rewrites the property into suspend functions. It works in two stages:
