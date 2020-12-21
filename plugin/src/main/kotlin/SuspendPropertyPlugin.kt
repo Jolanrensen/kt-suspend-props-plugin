@@ -9,8 +9,9 @@ import arrow.meta.phases.codegen.ir.valueArguments
 import arrow.meta.quotes.META_DEBUG_COMMENT
 import arrow.meta.quotes.ScopedList
 import arrow.meta.quotes.Transform
+import arrow.meta.quotes.nameddeclaration.stub.typeparameterlistowner.NamedFunction
 import arrow.meta.quotes.nameddeclaration.stub.typeparameterlistowner.Property
-import arrow.meta.quotes.property
+import arrow.meta.quotes.quote
 import org.jetbrains.kotlin.backend.common.lower.DeclarationIrBuilder
 import org.jetbrains.kotlin.com.intellij.psi.PsiElement
 import org.jetbrains.kotlin.descriptors.impl.PropertyGetterDescriptorImpl
@@ -22,9 +23,7 @@ import org.jetbrains.kotlin.ir.util.dump
 import org.jetbrains.kotlin.ir.visitors.IrElementTransformerVoid
 import org.jetbrains.kotlin.ir.visitors.transformChildrenVoid
 import org.jetbrains.kotlin.name.FqName
-import org.jetbrains.kotlin.psi.KtAnnotated
-import org.jetbrains.kotlin.psi.KtProperty
-import org.jetbrains.kotlin.psi.KtUserType
+import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.utils.addToStdlib.safeAs
 import kotlin.contracts.ExperimentalContracts
 import kotlin.reflect.KClass
@@ -67,20 +66,30 @@ val Meta.suspendProperty: CliPlugin
 //                    .map { it.first }
 //            },
 
-            property(
+            quote<KtElement>(
                 ctx = this,
                 match = {
-                    (modifierList?.text?.contains("suspend") ?: false)
-                            || (getter?.modifierList?.text?.contains("suspend") ?: false)
-                            || (setter?.modifierList?.text?.contains("suspend") ?: false)
-                }) { rewriteSuspendPropsQuote(it, this) },
+                    when (this) {
+                        is KtNamedFunction -> shouldRewriteSuspendOperatorFunsQuote()
+                        is KtProperty -> shouldRewriteSuspendPropsQuote()
+                        else -> false
+                    }
+                }
+            ) {
+                when (it) {
+                    is KtNamedFunction -> rewriteSuspendOperatorFunsQuote(it, NamedFunction(it))
+                    is KtProperty -> rewriteSuspendPropsQuote(it, Property(it))
+                    else -> Transform.empty
+                }
+            },
+
 
             irFile { file ->
                 println("old file: " + file.dump())
                 file
             },
 
-            rerouteSuspendPropsIR(),
+            manipulateIR(),
 
             irFile { file ->
                 println("new File: " + file.dump())
@@ -90,6 +99,10 @@ val Meta.suspendProperty: CliPlugin
             )
     }
 
+private fun KtProperty.shouldRewriteSuspendPropsQuote(): Boolean =
+    (modifierList?.text?.contains("suspend") ?: false)
+            || (getter?.modifierList?.text?.contains("suspend") ?: false)
+            || (setter?.modifierList?.text?.contains("suspend") ?: false)
 
 @OptIn(ExperimentalStdlibApi::class)
 private fun CompilerContext.rewriteSuspendPropsQuote(
@@ -126,28 +139,18 @@ private fun CompilerContext.rewriteSuspendPropsQuote(
 
 
             this += """
-                            |${if (debug) META_DEBUG_COMMENT else ""}
-                            |@SuspendProp
-                        """.trimMargin().trim().annotationEntry
+                    |${if (debug) META_DEBUG_COMMENT else ""}
+                    |@SuspendProp
+                    """.trimMargin().trim().annotationEntry
 
             // add original property with exceptions so that ::references still work
             this += run {
                 """
-                                |${if (debug) META_DEBUG_COMMENT else ""}
-                                |$modality $visibility $valOrVar $name $returnType $initializer
-                                |   ${
-                    if (getter.toString() == "" || value.hasInitializer())
-                        ""
-                    else
-                        "get() = throw IllegalStateException(\"This call is replaced with _suspendProp_get${prop.name!!.capitalize()}() at compile time.\")"
-                }
-                                |   ${
-                    if (setter.toString() == "" || value.hasInitializer())
-                        ""
-                    else
-                        "set${setter.`(params)`} = throw IllegalStateException(\"This call is replaced with _suspendProp_set${prop.name!!.capitalize()}() at compile time.\")"
-                }
-                            """.trimMargin().trim().property
+                |${if (debug) META_DEBUG_COMMENT else ""}
+                |$modality $visibility $valOrVar $name $returnType $initializer
+                |   ${if (getter.toString() == "" || value.hasInitializer()) "" else "get() = throw IllegalStateException(\"This call is replaced with _suspendProp_get${prop.name!!.capitalize()}() at compile time.\")"}
+                |   ${if (setter.toString() == "" || value.hasInitializer()) "" else "set${setter.`(params)`} = throw IllegalStateException(\"This call is replaced with _suspendProp_set${prop.name!!.capitalize()}() at compile time.\")"}
+                """.trimMargin().trim().property
             }
 
             if (hasGetter)
@@ -159,11 +162,9 @@ private fun CompilerContext.rewriteSuspendPropsQuote(
                     val sus = if (getterIsSuspend) "suspend " else ""
 
                     """
-                                |${if (debug) META_DEBUG_COMMENT else ""}
-                                |$mod$vis${sus}fun _suspendProp_get${prop.name!!.capitalize()}()$returnType ${
-                        if (bodyWithoutCommentsAndWhiteSpace.first() == '{') "$bodyExpression" else "= $bodyExpression"
-                    }
-                            """.trimMargin().trim().function
+                    |${if (debug) META_DEBUG_COMMENT else ""}
+                    |$mod$vis${sus}fun _suspendProp_get${prop.name!!.capitalize()}()$returnType ${if (bodyWithoutCommentsAndWhiteSpace.first() == '{') "$bodyExpression" else "= $bodyExpression"}
+                    """.trimMargin().trim().function
                 }
 
             if (hasSetter)
@@ -173,29 +174,65 @@ private fun CompilerContext.rewriteSuspendPropsQuote(
                         .withoutWhitespace()
 
                     val sus = if (setterIsSuspend) "suspend " else ""
+                    val params = ScopedList(
+                        value = value?.valueParameters ?: emptyList(),
+                        prefix = "(",
+                        postfix = ")",
+                        forceRenderSurroundings = true,
+                    ) { "${it.name}$returnType" }
 
                     """
-                                |${if (debug) META_DEBUG_COMMENT else ""}
-                                |$mod$vis${sus}fun _suspendProp_set${prop.name!!.capitalize()}${
-                        ScopedList(
-                            prefix = "(",
-                            value = value?.valueParameters ?: emptyList(),
-                            postfix = ")",
-                            forceRenderSurroundings = true,
-                            transform = { "${it.name}$returnType" },
-                        )
-                    } ${
-                        if (bodyWithoutCommentsAndWhiteSpace.first() == '{') "$bodyExpression" else "= $bodyExpression"
-                    }
-                            """.trimMargin().trim().function
+                    |${if (debug) META_DEBUG_COMMENT else ""}
+                    |$mod$vis${sus}fun _suspendProp_set${prop.name!!.capitalize()}$params ${if (bodyWithoutCommentsAndWhiteSpace.first() == '{') "$bodyExpression" else "= $bodyExpression"}
+                    """.trimMargin().trim().function
                 }
 
         }
     )
 }
 
+private fun KtNamedFunction.shouldRewriteSuspendOperatorFunsQuote(): Boolean =
+    modifierList?.text?.let { "suspend" in it && "operator" in it } ?: false
 
-private fun Meta.rerouteSuspendPropsIR(): IRGeneration = IrGeneration { _, moduleFragment, pluginContext ->
+@OptIn(ExperimentalStdlibApi::class)
+private fun CompilerContext.rewriteSuspendOperatorFunsQuote(
+    fn: KtNamedFunction,
+    namedFunction: NamedFunction,
+): Transform<KtNamedFunction> = namedFunction.run {
+
+    val vis = visibility?.toString()?.let { "$it " } ?: ""
+    val mod = modality?.toString()?.let { "$it " } ?: ""
+
+    val bodyWithoutCommentsAndWhiteSpace = fn.bodyExpression?.text
+        ?.withoutComments()
+        ?.withoutWhitespace()
+        ?: TODO("suspend operator fun without body?")
+
+
+    Transform.replace(
+        replacing = fn,
+        newDeclarations = buildList {
+            this += """
+                    |${if (debug) META_DEBUG_COMMENT else ""}
+                    |@SuspendProp
+                    """.trimMargin().trim().annotationEntry
+
+            val ret = if (returnType.isEmpty()) ": Unit" else returnType.toString()
+
+            this += """
+                    |${if (debug) META_DEBUG_COMMENT else ""}
+                    |$mod${vis}operator fun $name$`(params)`$ret = throw IllegalStateException("This call is replaced with _suspendProp_$name() at compile time.")
+                    """.trimMargin().trim()/*.also { println(it) }*/.function
+
+            this += """
+                    |${if (debug) META_DEBUG_COMMENT else ""}
+                    |$mod${vis}suspend fun _suspendProp_$name$`(params)`$returnType ${if (fn.hasBlockBody()) fn.bodyExpression!!.text else "= ${fn.bodyExpression!!.text}"}
+                    """.trimMargin().trim()/*.also { println(it) }*/.function
+        }
+    )
+}
+
+private fun Meta.manipulateIR(): IRGeneration = IrGeneration { _, moduleFragment, pluginContext ->
     moduleFragment.transformChildrenVoid(object : IrElementTransformerVoid() {
 
         override fun visitCall(expression: IrCall): IrExpression {
@@ -203,6 +240,7 @@ private fun Meta.rerouteSuspendPropsIR(): IRGeneration = IrGeneration { _, modul
 
             val accessorFunctionName = expression.symbol.toString()
 
+            // TODO split off into different functions
             val result = when {
 
                 "<get-" in accessorFunctionName -> {
