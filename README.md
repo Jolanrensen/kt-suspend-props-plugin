@@ -18,6 +18,7 @@ suspend fun main() {
     testProp++
 }
 
+// NOTE: You must explicitly give the return type
 private suspend var testProp: Int
     get() {
         delay(2000)
@@ -47,6 +48,7 @@ suspend fun test() {
     testProp = 5
 }
 
+// NOTE: You must explicitly give the return type
 private var testProp: Int
     get() = 3
     suspend set(value) {
@@ -55,13 +57,40 @@ private var testProp: Int
     }
 ```
 
+Suspend delegate properties also work, but only if they are non-local.
+For example:
+
+```kotlin
+import kotlinx.coroutines.delay
+
+// NOTE: For now, you need to create an annotation class SuspendProp.
+// This will not be needed in the future anymore once I figure out why additionalSources won't work
+annotation class SuspendProp
+
+class Test {
+    suspend operator fun getValue(thisRef: Any?, property: KProperty<*>): Int {
+        delay(5)
+        return 5
+    }
+    suspend operator fun setValue(thisRef: Any?, property: KProperty<*>, value: Int) {
+        delay(5)
+        println(value)
+    }
+}
+
+suspend var a: Int by Test()
+
+suspend fun main() {
+    a += 5
+}
+```
+
 ## Future improvements
-1. Write Intellij plugin
-2. Suspend Delegates (suspend operator fun get/setValue)
-3. Interface support
-4. Robust naming of under-the-hood-created functions
-5. Making sure creating an annotation class SuspendProp by the user is no longer needed
-3. Local Suspend Delegates (might require variable references to work)
+1. Write IntelliJ plugin
+2. Interface support
+3. Robust naming of under-the-hood-created functions
+4. Making sure creating an annotation class SuspendProp by the user is no longer needed
+5. Local Suspend Delegates (might require variable references to work)
 
 ## How does it work?
 The plugin essentially rewrites the property into suspend functions. It works in two stages:
@@ -74,6 +103,8 @@ blocks.
 Calls to the suspend property must also be rerouted, but this is not yet possible in this stage, as 
 this stage essentially looks at the file in a text-only format, not really understanding what's going
 on in the code. We can however help the IR stage a bit with this by adding an annotation.
+
+### Suspended getter/setter:
 
 If we take the fist example, the code is rewritten by the plugin to this:
 ```kotlin
@@ -131,6 +162,38 @@ private suspend fun _suspendProp_setTestProp(value: Int) {
 }
 ```
 
+### Suspended property delegate:
+
+The suspend operator functions are rewritten quite similarly. Meaning that
+```kotlin
+suspend operator fun getValue(thisRef: Any?, property: KProperty<*>): Int { ... }
+```
+will be rewritten as
+```kotlin
+@SuspendProp
+operator fun getValue(thisRef: Any?, property: KProperty<*>): Int = throw IllegalStateException("This call is replaced with _suspendProp_getValue() at compile time.")
+
+suspend fun _suspendProp_getValue(thisRef: Any?, property: KProperty<*>): Int { ... }
+```
+
+Aside from this, delegated suspend properties like
+```kotlin
+suspend var test: Int by someDelegate
+```
+will be rewritten as
+```kotlin
+val _suspendProp_test = someDelegate
+
+@SuspendProp
+var test: Int
+    get() = throw IllegalStateException("This call is replaced with _suspendProp_getTest() at compile time.")
+    set(value) = throw IllegalStateException("This call is replaced with _suspendProp_setTest() at compile time.")
+
+suspend fun _suspendProp_getTest(): Int = _suspendProp_test._suspendProp_getValue(null, ::c)
+suspend fun _suspendProp_setTest(value: Int) = _suspendProp_test._suspendProp_setValue(null, ::c, value)
+```
+and just like before, all calls to the getter or setter of `test` will be rerouted to the `_suspendProp_` variant!
+You can see now why local properties are not supported, because references (`::`) to local variables don't work in Kotlin (yet).
 
 ## References
 1. [Arrow Meta](https://meta.arrow-kt.io/)
