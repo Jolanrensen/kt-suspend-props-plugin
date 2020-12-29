@@ -87,13 +87,16 @@ class DelegateTests {
                     doesNothing()
                     println(value)
                 }
+                fun testFun() {}
             }
 
-//            suspend var c by Test()
-//
-//            suspend fun main() {
-//                c = 5
-//            }
+            suspend var c: Int by Test()
+
+            suspend fun main() {
+                c = 5
+                val test = Test()
+                test.testFun()
+            }
         """.trimIndent()
 
         @Language("kotlin")
@@ -105,7 +108,7 @@ class DelegateTests {
             suspend fun doesNothing() {}
 
             class Test {
-                @SuspendProp
+                @SuspendProp 
                 operator fun getValue(thisRef: Any?, property: KProperty<*>): Int = throw IllegalStateException("This call is replaced with _suspendProp_getValue() at compile time.")
 
                 suspend fun _suspendProp_getValue(thisRef: Any?, property: KProperty<*>): Int = 5
@@ -117,16 +120,24 @@ class DelegateTests {
                     doesNothing()
                     println(value)
                 }
+                fun testFun() {}
             }
 
-//            var _suspendProp_c = Test()
-//
-//            @SuspendProp
-//            var c by _suspendProp_c
-//
-//            suspend fun main() {
-//                c = 5
-//            }
+            val _suspendProp_c = Test()
+
+            @SuspendProp
+            var c: Int
+                get() = throw IllegalStateException("This call is replaced with _suspendProp_getC() at compile time.")
+                set(value) = throw IllegalStateException("This call is replaced with _suspendProp_setC() at compile time.")
+
+            suspend fun _suspendProp_getC(): Int = _suspendProp_c._suspendProp_getValue(null, ::c)
+            suspend fun _suspendProp_setC(value: Int) = _suspendProp_c._suspendProp_setValue(null, ::c, value)
+
+            suspend fun main() {
+                c = 5
+                val test = Test()
+                test.testFun()
+            }
         """.trimIndent()
 
         // in IR replace all calls to @SuspendProp annotated elements

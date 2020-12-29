@@ -78,7 +78,9 @@ val Meta.suspendProperty: CliPlugin
             ) {
                 when (it) {
                     is KtNamedFunction -> rewriteSuspendOperatorFunsQuote(it, NamedFunction(it))
-                    is KtProperty -> rewriteSuspendPropsQuote(it, Property(it))
+                    is KtProperty ->
+                        if (it.hasDelegate()) rewriteDelegatedSuspendPropQuote(it, Property(it))
+                        else rewriteSuspendPropsQuote(it, Property(it))
                     else -> Transform.empty
                 }
             },
@@ -104,32 +106,53 @@ private fun KtProperty.shouldRewriteSuspendPropsQuote(): Boolean =
             || (getter?.modifierList?.text?.contains("suspend") ?: false)
             || (setter?.modifierList?.text?.contains("suspend") ?: false)
 
+/**
+ * Converts something like
+ * ```kotlin
+ * suspend var test: Int
+ *  get() { ... }
+ *  set(value) { ... }
+ * ```
+ * into
+ * ```kotlin
+ * @SuspendProp
+ * var test: Int
+ *  get() = throw IllegalArgumentException(...)
+ *  set(value) = throw IllegalArgumentException(...)
+ *
+ * suspend fun _suspendProp_getTest(): Int { ... }
+ *
+ * suspend fun _suspendProp_setTest(value: Int) { ... }
+ * ```
+ */
 @OptIn(ExperimentalStdlibApi::class)
 private fun CompilerContext.rewriteSuspendPropsQuote(
     prop: KtProperty,
     property: Property,
 ): Transform<KtProperty> = property.run {
-    if (delegate.toString() != "") throw IllegalArgumentException("Delegate suspend properties are not supported yet.")
+    if (delegate.toString() != "") throw IllegalArgumentException("Wrong function, use [rewriteDelegatedSuspendPropQuote].")
+    if (returnType.toString().isBlank()) throw IllegalStateException("Please state the return type of suspend properties explicitly.")
     if (initializer.toString() != "") throw IllegalArgumentException("Suspend property initializers are not supported yet.")
 
     val vis = visibility?.toString()?.let { "$it " } ?: ""
     val mod = modality?.toString()?.let { "$it " } ?: ""
 
+    val propertyIsSuspend = prop.modifierList?.text?.contains("suspend") ?: false
+
+    val hasGetter = getter.value != null
+    val hasSetter = setter.value != null
+
+    val getterIsSuspend =
+        propertyIsSuspend || prop.getter?.modifierList?.text?.contains("suspend") ?: false
+    val setterIsSuspend =
+        propertyIsSuspend || prop.setter?.modifierList?.text?.contains("suspend") ?: false
+
+    println("hasGetter: $hasGetter, hasSetter: $hasSetter, getterIsSuspend: $getterIsSuspend, setterIsSuspend: $setterIsSuspend")
+
+
     Transform.replace(
         replacing = prop,
         newDeclarations = buildList {
-
-            val propertyIsSuspend = prop.modifierList?.text?.contains("suspend") ?: false
-
-            val hasGetter = getter.value != null
-            val hasSetter = setter.value != null
-
-            val getterIsSuspend =
-                propertyIsSuspend || prop.getter?.modifierList?.text?.contains("suspend") ?: false
-            val setterIsSuspend =
-                propertyIsSuspend || prop.setter?.modifierList?.text?.contains("suspend") ?: false
-
-            println("hasGetter: $hasGetter, hasSetter: $hasSetter, getterIsSuspend: $getterIsSuspend, setterIsSuspend: $setterIsSuspend")
 
 //                        TODO, this becomes an error when there are multiple suspend properties. Must be added only once to a file
 //                        this += """
@@ -137,21 +160,19 @@ private fun CompilerContext.rewriteSuspendPropsQuote(
 //                            |annotation class _SuspendProp
 //                        """.trimMargin().trim().`class`
 
-
             this += """
                     |${if (debug) META_DEBUG_COMMENT else ""}
                     |@SuspendProp
                     """.trimMargin().trim().annotationEntry
 
             // add original property with exceptions so that ::references still work
-            this += run {
-                """
-                |${if (debug) META_DEBUG_COMMENT else ""}
-                |$modality $visibility $valOrVar $name $returnType $initializer
-                |   ${if (getter.toString() == "" || value.hasInitializer()) "" else "get() = throw IllegalStateException(\"This call is replaced with _suspendProp_get${prop.name!!.capitalize()}() at compile time.\")"}
-                |   ${if (setter.toString() == "" || value.hasInitializer()) "" else "set${setter.`(params)`} = throw IllegalStateException(\"This call is replaced with _suspendProp_set${prop.name!!.capitalize()}() at compile time.\")"}
-                """.trimMargin().trim().property
-            }
+            this += """
+                    |${if (debug) META_DEBUG_COMMENT else ""}
+                    |$modality $visibility $valOrVar $name $returnType $initializer
+                    |   ${if (getter.toString() == "" || value.hasInitializer()) "" else "get() = throw IllegalStateException(\"This call is replaced with _suspendProp_get${prop.name!!.capitalize()}() at compile time.\")"}
+                    |   ${if (setter.toString() == "" || value.hasInitializer()) "" else "set${setter.`(params)`} = throw IllegalStateException(\"This call is replaced with _suspendProp_set${prop.name!!.capitalize()}() at compile time.\")"}
+                    """.trimMargin().trim().property
+
 
             if (hasGetter)
                 this += getter.run {
@@ -189,6 +210,75 @@ private fun CompilerContext.rewriteSuspendPropsQuote(
 
         }
     )
+}
+
+/**
+ * Converts something like
+ * ```kotlin
+ * suspend var c by Test()
+ * ```
+ * into
+ * ```kotlin
+ * val _suspendProp_c = Test()
+ *
+ * @SuspendProp
+ * var c: Int
+ *     get() = throw IllegalStateException("This call is replaced with _suspendProp_getC() at compile time.")
+ *     set(value) = throw IllegalStateException("This call is replaced with _suspendProp_setC() at compile time.")
+ *
+ * suspend fun _suspendProp_getC(): Int = suspendProp_c._suspendProp_getValue(null, ::c)
+ * suspend fun _suspendProp_setC(value: Int) = suspendProp_c._suspendProp_setValue(null, ::c, value)
+ * ```
+ */
+@OptIn(ExperimentalStdlibApi::class)
+private fun CompilerContext.rewriteDelegatedSuspendPropQuote(
+    prop: KtProperty,
+    property: Property,
+): Transform<KtProperty> = property.run {
+    if (delegate.toString() == "") throw IllegalArgumentException("This suspend property does not have a delegate")
+    if (returnType.toString().isBlank()) throw IllegalStateException("Please state the return type of suspend properties explicitly.")
+
+    val vis = visibility?.toString()?.let { "$it " } ?: ""
+    val mod = modality?.toString()?.let { "$it " } ?: ""
+
+    val hasGetter = true
+    val hasSetter = valOrVar.asString() == "var"
+
+    Transform.replace(
+        replacing = prop,
+        newDeclarations = buildList {
+
+            this += """
+                    |${if (debug) META_DEBUG_COMMENT else ""}
+                    |$mod${vis}val _suspendProp_$name = $delegateExpressionOrInitializer
+                    """.trimMargin().trim().property
+
+            this += """
+                    |${if (debug) META_DEBUG_COMMENT else ""}
+                    |@SuspendProp
+                    """.trimMargin().trim().annotationEntry
+
+            this += """
+                    |${if (debug) META_DEBUG_COMMENT else ""}
+                    |$modality $visibility $valOrVar $name $returnType
+                    |    ${if (hasGetter) "get() = throw IllegalStateException(\"This call is replaced with _suspendProp_get${prop.name!!.capitalize()}() at compile time.\")" else ""}
+                    |    ${if (hasSetter) "set(value) = throw IllegalStateException(\"This call is replaced with _suspendProp_set${prop.name!!.capitalize()}() at compile time.\")" else ""}
+                    """.trimMargin().trim().property
+
+            if (hasGetter)
+                this += """
+                        |${if (debug) META_DEBUG_COMMENT else ""}
+                        |$mod${vis}suspend fun _suspendProp_get${prop.name!!.capitalize()}()$returnType = _suspendProp_$name._suspendProp_getValue(null, ::$name)
+                        """.trimMargin().trim().function
+
+            if (hasSetter)
+                this += """
+                        |${if (debug) META_DEBUG_COMMENT else ""}
+                        |$mod${vis}suspend fun _suspendProp_set${prop.name!!.capitalize()}(value$returnType) = _suspendProp_$name._suspendProp_setValue(null, ::$name, value)
+                        """.trimMargin().trim().function
+        },
+
+        )
 }
 
 private fun KtNamedFunction.shouldRewriteSuspendOperatorFunsQuote(): Boolean =
@@ -275,20 +365,51 @@ private fun Meta.manipulateIR(): IRGeneration = IrGeneration { _, moduleFragment
                             ?.toString()
                             ?.startsWith("@SuspendProp") == true
                     ) {
+
                         val propName = (expression.symbol.descriptor as PropertySetterDescriptorImpl)
                             .correspondingProperty
                             .name
                             .asString()
 
+                        if (
+                            (expression.symbol.descriptor as PropertySetterDescriptorImpl)
+                                .correspondingProperty
+                                .isDelegated // TODO maybe use another way to check this
+                        ) {
 
-                        DeclarationIrBuilder(pluginContext, expression.symbol)
-                            .irCall(
-                                pluginContext
-                                    .referenceFunctions(FqName("_suspendProp_set${propName.capitalize()}"))
-                                    .first()
-                            ).apply {
-                                putValueArgument(0, expression.valueArguments.first().second)
-                            }
+//                            DeclarationIrBuilder(pluginContext, expression.symbol)
+//                                .irCall(
+//                                    pluginContext
+//                                        .referenceFunctions(FqName("_suspendProp_set${propName.capitalize()}"))
+//                                        .first()
+//                                ).apply {
+//                                    putValueArgument(0, expression.valueArguments.first().second)
+//                                }
+
+                            // TODO this needs to be called with the right receiver, like:
+                            //    CALL 'public final fun testFun (): kotlin.Unit declared in <root>.Test' type=kotlin.Unit origin=null
+                            //        $this: GET_VAR 'val test: <root>.Test [val] declared in <root>.main' type=<root>.Test origin=null
+
+                            DeclarationIrBuilder(pluginContext, expression.symbol)
+                                .irCall(
+                                    pluginContext
+                                        .referenceFunctions(FqName("_suspendProp_set${propName.capitalize()}"))
+                                        .first()
+                                ).apply {
+
+                                    putValueArgument(0, expression.valueArguments.first().second)
+                                }
+                        } else {
+
+                            DeclarationIrBuilder(pluginContext, expression.symbol)
+                                .irCall(
+                                    pluginContext
+                                        .referenceFunctions(FqName("_suspendProp_set${propName.capitalize()}"))
+                                        .first()
+                                ).apply {
+                                    putValueArgument(0, expression.valueArguments.first().second)
+                                }
+                        }
                     } else expression
                 }
                 else -> expression

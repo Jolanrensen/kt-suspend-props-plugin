@@ -4,44 +4,46 @@ import kotlin.reflect.*
 // TODO remove when this is no longer needed in the future
 annotation class SuspendProp
 
-suspend fun main() {
-    testProp++
-}
-
-private suspend var testProp: Int
-    get() {
-        delay(2000)
-        return 3
-    }
-    set(value) {
-        delay(2000)
-        println(value)
-    }
-
-private var test: Int
-    get() = 5
-    suspend set(value) {
-        delay(23)
-        println(value)
-    }
-
-
-//class Test {
-//    operator fun getValue(thisRef: Any?, property: KProperty<*>): Int {
-//        return 5
+//suspend fun main() {
+//    testProp++
+//}
+//
+//private suspend var testProp: Int
+//    get() {
+//        delay(2000)
+//        return 3
 //    }
-//    operator fun setValue(thisRef: Any?, property: KProperty<*>, value: Int) {
+//    set(value) {
+//        delay(2000)
 //        println(value)
 //    }
-//}
 //
-//fun main() {
-//    var a by Test()
-//    println(a)
-//    a = 5
-//}
-//
-//
+//private var test: Int
+//    get() = 5
+//    suspend set(value) {
+//        delay(23)
+//        println(value)
+//    }
+
+
+class Test {
+    suspend operator fun getValue(thisRef: Any?, property: KProperty<*>): Int {
+        delay(5)
+        return 5
+    }
+    suspend operator fun setValue(thisRef: Any?, property: KProperty<*>, value: Int) {
+        delay(5)
+        println(value)
+    }
+}
+
+suspend var a: Int by Test()
+
+suspend fun main() {
+    a += 5
+}
+
+
 //class Test {
 //    @SuspendProp
 //    operator fun getValue(thisRef: Any?, property: KProperty<*>): Int =
@@ -69,4 +71,4 @@ private var test: Int
 //
 //suspend fun b() {
 //    _suspendProp_c._suspendProp_setValue(null, ::c, 5)
-//}
+}
