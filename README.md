@@ -6,7 +6,9 @@ A Kotlin compiler plugin which adds suspend properties to the language.
 
 
 ## Usage
-See [plugin-demo](./plugin-demo/src/main/kotlin/Main.kt) for full examples
+
+Below are a couple of examples.
+See [plugin-demo](./plugin-demo/src/main/kotlin/Main.kt) for more.
 ```kotlin
 import kotlinx.coroutines.delay
 
