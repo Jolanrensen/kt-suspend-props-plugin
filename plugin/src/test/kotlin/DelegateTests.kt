@@ -28,6 +28,8 @@ class DelegateTests {
             suspend var test: Int
                 get() = 6
                 set(value) { doesNothing() }
+
+            suspend var c: Int by Test()
         """.trimIndent()
 
         @Language("kotlin")
@@ -60,6 +62,16 @@ class DelegateTests {
     
             suspend fun _suspendProp_getTest(): Int = 6
             suspend fun _suspendProp_setTest(value: Int) { doesNothing() }
+
+            val _suspendProp_c = Test()
+
+            @SuspendProp
+            var c: Int
+                get() = throw IllegalStateException("This call is replaced with _suspendProp_getC() at compile time.")
+                set(value) = throw IllegalStateException("This call is replaced with _suspendProp_setC() at compile time.")
+
+            suspend fun _suspendProp_getC(): Int = _suspendProp_c._suspendProp_getValue(null, ::c)
+            suspend fun _suspendProp_setC(value: Int) = _suspendProp_c._suspendProp_setValue(null, ::c, value)
         """.trimIndent()
 
         assertThis(CompilerTest(
@@ -157,14 +169,12 @@ class DelegateTests {
 
         @Language("kotlin")
         val source = """
-            import kotlinx.coroutines.delay
             import kotlin.reflect.KProperty
 
             annotation class SuspendProp
 
             class Test {
                 suspend operator fun getValue(thisRef: Any?, property: KProperty<*>): Int {
-                    delay(2000)
                     return 5
                 }
                 suspend operator fun setValue(thisRef: Any?, property: KProperty<*>, value: Int) {
@@ -173,7 +183,7 @@ class DelegateTests {
             }
 
             suspend fun b() {
-                var a by Test()
+                suspend var a: Int by Test()
                 a = 5
             }
 
@@ -181,7 +191,6 @@ class DelegateTests {
 
         @Language("kotlin")
         val expectedOutput = """
-            import kotlinx.coroutines.delay
             import kotlin.reflect.KProperty
 
             annotation class SuspendProp
@@ -192,7 +201,6 @@ class DelegateTests {
                     throw IllegalStateException()
 
                 suspend fun _suspendProp_getValue(thisRef: Any?, property: KProperty<*>): Int {
-                    delay(2000)
                     return 5
                 }
 

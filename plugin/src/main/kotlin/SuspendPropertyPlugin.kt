@@ -237,6 +237,8 @@ private fun CompilerContext.rewriteDelegatedSuspendPropQuote(
 ): Transform<KtProperty> = property.run {
     if (delegate.toString() == "") throw IllegalArgumentException("This suspend property does not have a delegate")
     if (returnType.toString().isBlank()) throw IllegalStateException("Please state the return type of suspend properties explicitly.")
+    if (prop.isLocal) throw IllegalStateException("Local suspend delegate properties are not supported. Move it outside this body/function.")
+
 
     val vis = visibility?.toString()?.let { "$it " } ?: ""
     val mod = modality?.toString()?.let { "$it " } ?: ""

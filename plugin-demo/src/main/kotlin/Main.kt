@@ -8,15 +8,15 @@ annotation class SuspendProp
 //    testProp++
 //}
 //
-//private suspend var testProp: Int
-//    get() {
-//        delay(2000)
-//        return 3
-//    }
-//    set(value) {
-//        delay(2000)
-//        println(value)
-//    }
+private suspend var testProp: Int
+    get() {
+        delay(5)
+        return 3
+    }
+    set(value) {
+        delay(5)
+        println(value)
+    }
 //
 //private var test: Int
 //    get() = 5
@@ -40,6 +40,7 @@ class Test {
 suspend var a: Int by Test()
 
 suspend fun main() {
+    testProp++
     a += 5
 }
 
