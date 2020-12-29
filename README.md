@@ -21,6 +21,7 @@ suspend fun main() {
 }
 
 // NOTE: You must explicitly give the return type
+// Adding suspend to a var makes both the getter and setter suspend
 private suspend var testProp: Int
     get() {
         delay(2000)
