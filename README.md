@@ -94,6 +94,7 @@ suspend fun main() {
 3. Robust naming of under-the-hood-created functions
 4. Making sure creating an annotation class SuspendProp by the user is no longer needed
 5. Local Suspend Delegates (might require variable references to work)
+6. thisRef in suspend operator functions is now always null, make this work
 
 ## How does it work?
 The plugin essentially rewrites the property into suspend functions. It works in two stages:
