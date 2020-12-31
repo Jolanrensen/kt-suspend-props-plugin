@@ -95,6 +95,8 @@ suspend fun main() {
 4. Making sure creating an annotation class SuspendProp by the user is no longer needed
 5. Local Suspend Delegates (might require variable references to work)
 6. thisRef in suspend operator functions is now always null, make this work
+7. Extension suspend properties and extension suspend operator funs
+8. Extension function on KProperty to get suspend getters/setters with reflection
 
 ## How does it work?
 The plugin essentially rewrites the property into suspend functions. It works in two stages:
