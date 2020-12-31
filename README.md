@@ -89,14 +89,15 @@ suspend fun main() {
 ```
 
 ## Future improvements
-1. Write IntelliJ plugin
-2. Interface support
-3. Robust naming of under-the-hood-created functions
-4. Making sure creating an annotation class SuspendProp by the user is no longer needed
-5. Local Suspend Delegates (might require variable references to work)
-6. thisRef in suspend operator functions is now always null, make this work
-7. Extension suspend properties and extension suspend operator funs
-8. Extension function on KProperty to get suspend getters/setters with reflection
+1. Suspend properties inside a scope
+2. Write IntelliJ plugin
+3. Interface support
+4. Robust naming of under-the-hood-created functions
+5. Making sure creating an annotation class SuspendProp by the user is no longer needed
+6. Local Suspend Delegates (might require variable references to work)
+7. thisRef in suspend operator functions is now always null, make this work
+8. Extension suspend properties and extension suspend operator funs
+9. Extension function on KProperty to get suspend getters/setters with reflection
 
 ## How does it work?
 The plugin essentially rewrites the property into suspend functions. It works in two stages:

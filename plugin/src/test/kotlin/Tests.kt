@@ -8,6 +8,66 @@ import org.junit.Test
 class GetterSetterTests {
 
     @Test
+    fun `inside class test`() {
+
+        @Language("kotlin")
+        val source = """
+            annotation class SuspendProp
+
+            class Test {
+                suspend var testProp: Int
+                    get() {
+                        // say what
+                        return 3
+                    }
+                    set(value) = println(value)
+            }
+
+            suspend fun main() {
+                val test = Test()
+                println(pointless(test.testProp))
+                test.testProp = 2
+                test.testProp += 2
+            }
+
+            fun pointless(something: Any?) = something            
+        """.trimIndent()
+
+        @Language("kotlin")
+        val expectedOutput = """
+            annotation class SuspendProp
+
+            class Test {
+                @SuspendProp
+                var testProp: Int
+                   get() = throw IllegalStateException("This call is replaced with _suspendProp_getTestProp() at compile time.")
+                   set(value) = throw IllegalStateException("This call is replaced with _suspendProp_setTestProp() at compile time.")
+    
+                suspend fun _suspendProp_getTestProp(): Int {
+                    // say what
+                    return 3
+                }
+                suspend fun _suspendProp_setTestProp(value: Int) = println(value)
+            }
+
+            suspend fun main() {
+                val test = Test()
+                println(pointless(test.testProp))
+                test.testProp = 2
+                test.testProp += 2
+            }
+
+            fun pointless(something: Any?) = something            
+        """.trimIndent()
+
+        assertThis(CompilerTest(
+            config = { listOf(addMetaPlugins(SuspendPropertyPlugin())) },
+            code = { source.source },
+            assert = { quoteOutputMatches(expectedOutput.source) }
+        ))
+    }
+
+    @Test
     fun `main test`() {
 
         @Language("kotlin")

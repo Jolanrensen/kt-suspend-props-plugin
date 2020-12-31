@@ -16,7 +16,9 @@ import org.jetbrains.kotlin.backend.common.lower.DeclarationIrBuilder
 import org.jetbrains.kotlin.com.intellij.psi.PsiElement
 import org.jetbrains.kotlin.descriptors.impl.PropertyGetterDescriptorImpl
 import org.jetbrains.kotlin.descriptors.impl.PropertySetterDescriptorImpl
+import org.jetbrains.kotlin.descriptors.impl.SimpleFunctionDescriptorImpl
 import org.jetbrains.kotlin.ir.builders.irCall
+import org.jetbrains.kotlin.ir.declarations.IrSymbolDeclaration
 import org.jetbrains.kotlin.ir.expressions.IrCall
 import org.jetbrains.kotlin.ir.expressions.IrExpression
 import org.jetbrains.kotlin.ir.util.dump
@@ -131,7 +133,9 @@ private fun CompilerContext.rewriteSuspendPropsQuote(
     property: Property,
 ): Transform<KtProperty> = property.run {
     if (delegate.toString() != "") throw IllegalArgumentException("Wrong function, use [rewriteDelegatedSuspendPropQuote].")
-    if (returnType.toString().isBlank()) throw IllegalStateException("Please state the return type of suspend properties explicitly.")
+    if (returnType.toString()
+            .isBlank()
+    ) throw IllegalStateException("Please state the return type of suspend properties explicitly.")
     if (initializer.toString() != "") throw IllegalArgumentException("Suspend property initializers are not supported yet.")
 
     val vis = visibility?.toString()?.let { "$it " } ?: ""
@@ -236,7 +240,9 @@ private fun CompilerContext.rewriteDelegatedSuspendPropQuote(
     property: Property,
 ): Transform<KtProperty> = property.run {
     if (delegate.toString() == "") throw IllegalArgumentException("This suspend property does not have a delegate")
-    if (returnType.toString().isBlank()) throw IllegalStateException("Please state the return type of suspend properties explicitly.")
+    if (returnType.toString()
+            .isBlank()
+    ) throw IllegalStateException("Please state the return type of suspend properties explicitly.")
     if (prop.isLocal) throw IllegalStateException("Local suspend delegate properties are not supported. Move it outside this body/function.")
 
 
@@ -328,12 +334,23 @@ private fun Meta.manipulateIR(): IRGeneration = IrGeneration { _, moduleFragment
     moduleFragment.transformChildrenVoid(object : IrElementTransformerVoid() {
 
         override fun visitCall(expression: IrCall): IrExpression {
-            println("call: " + expression.dump())
+//            println("call: " + expression.dump())
 
             val accessorFunctionName = expression.symbol.toString()
 
             // TODO split off into different functions
             val result = when {
+
+                expression.symbol.descriptor.name.asString() == "getValue" -> {
+                    if ((expression.symbol.descriptor as? SimpleFunctionDescriptorImpl)
+                            ?.toString()
+                            ?.startsWith("@SuspendProp") == true
+                    ) {
+
+                        expression // TODO
+
+                    } else expression
+                }
 
                 "<get-" in accessorFunctionName -> {
                     if ((expression.symbol.descriptor as? PropertyGetterDescriptorImpl)
@@ -351,6 +368,26 @@ private fun Meta.manipulateIR(): IRGeneration = IrGeneration { _, moduleFragment
                             .correspondingProperty
                             .name
                             .asString()
+//
+//                        DeclarationIrBuilder(pluginContext, expression.symbol)
+//                            .irCall(
+//                                pluginContext
+//                                    .referenceFunctions(FqName("_suspendProp_get${propName.capitalize()}"))
+//                                    .first()
+//                            )
+
+//                        val parent =
+//                            expression.symbol.descriptor
+//                                .let { it as PropertyGetterDescriptorImpl }
+//                                .correspondingProperty
+//                                .let { pluginContext.symbolTable.referenceProperty(it) }
+//                                .owner
+//                                .parent
+//                                .let { it as IrSymbolDeclaration<*> }
+//                                .symbol
+//                                .owner
+
+
 
                         DeclarationIrBuilder(pluginContext, expression.symbol)
                             .irCall(
